@@ -338,6 +338,11 @@ headers, caps bodies, and suppresses production URLs and bodies by default.
   all lifecycle/network modes, bounded-wait and failure propagation tests,
   evidence tests, and OS-independent test bodies.
 
+Implemented flows use the public OS-neutral `AgentOperations` port. A flow
+issues a state-changing request once, then delegates read-only observation to a
+shared bounded waiter with an injected monotonic clock and timeout diagnostics.
+No flow contains OS/version branching, raw transport, raw HTTP, or direct sleep.
+
 ### 5.13 Checks
 
 - **Responsibility:** Observe and assert stable product outcomes with bounded,
@@ -352,6 +357,10 @@ headers, caps bodies, and suppresses production URLs and bodies by default.
 - **Unit-test strategy:** fake-clock polling tests, deadline boundaries, outcome
   taxonomy, stable assertion messages, evidence/redaction, and proof that each
   observation is side-effect free unless explicitly documented.
+
+`AgentChecks`, `BackendChecks`, `ProcessChecks`, `ServiceChecks`, `EventChecks`,
+`LogChecks`, and `VersionChecks` accept only public typed observations and emit
+intent-level assertion messages.
 
 ### 5.14 Fixtures
 

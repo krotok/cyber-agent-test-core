@@ -29,6 +29,8 @@ from cyber_agent_test_core.models import (
 )
 from cyber_agent_test_core.reporting.allure import attach_skip_reason
 
+pytest_plugins = ("cyber_agent_test_core.fixtures",)
+
 _COMPATIBILITY_RESULT = pytest.StashKey[CompatibilityResult]()
 _CAPABILITY_MARKERS = (
     REQUIRES_CAPABILITY,

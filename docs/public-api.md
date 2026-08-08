@@ -31,6 +31,37 @@ adds them to the public contract.
 No implementation is defined by this document; concrete symbols will be added
 only when implemented and documented.
 
+### Beginner-friendly flows and checks
+
+The public `models` module exports OS-neutral Agent handles and typed lifecycle,
+registration, health, threat, isolation, log-upload, event, process, and service
+observations. `api.AgentOperations` is the environment integration port; product
+tests consume its behavior only through fixtures and flows.
+
+The public `flows` module exports `AgentInstallationFlow`,
+`AgentRegistrationFlow`, `AgentHealthFlow`, `AgentUpgradeFlow`,
+`AgentDowngradeFlow`, `AgentRollbackFlow`, `AgentUninstallFlow`,
+`ThreatDetectionFlow`, `NetworkIsolationFlow`, and `LogUploadFlow`.
+
+The public `checks` module exports `AgentChecks`, `BackendChecks`,
+`ProcessChecks`, `ServiceChecks`, `EventChecks`, `LogChecks`, and
+`VersionChecks`. Assertion messages describe the product outcome and include
+sanitized observations; they never expose commands or transport objects.
+
+The pytest plugin registers flow/check fixtures plus `installed_agent` and
+`healthy_agent`. A laboratory integration supplies `agent_operations`,
+`agent_handle`, and `agent_version`; core fails explicitly if they are absent.
+
+```python
+def test_agent_is_healthy(healthy_agent, agent_checks):
+    agent_checks.is_healthy(healthy_agent)
+
+
+def test_registration(installed_agent, registration_flow, agent_checks):
+    result = registration_flow.register(installed_agent)
+    agent_checks.is_registered(result)
+```
+
 ### Capability models
 
 The public `models` module exports `Capability`, `CapabilitySet`,

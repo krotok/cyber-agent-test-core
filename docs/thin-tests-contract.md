@@ -52,6 +52,18 @@ Product tests must not:
 An unavailable capability is a framework gap, not permission to put mechanics
 in a product test.
 
+## Flow and waiting contract
+
+Flows trigger a state-changing product operation once and use framework-owned,
+bounded polling only for read-only observations. Timeout failures name the
+expected condition and retain the last sanitized observation. Product tests do
+not configure clocks, call `time.sleep`, write polling loops, or repeat actions.
+
+Level 1 tests use ready-state fixtures such as `healthy_agent`. Level 2 tests
+invoke one public flow and pass its typed result to a public check. Raw SSH,
+HTTP, controller calls, OS/version branches, and manual polling are invalid at
+both levels.
+
 ## Retry and failure semantics
 
 Product behavior is evaluated once per test attempt. A failed assertion, wrong
