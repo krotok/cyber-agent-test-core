@@ -47,6 +47,7 @@ Everything else is private, even if Python makes it technically importable.
 - [Public API policy](docs/public-api.md)
 - [Thin tests contract](docs/thin-tests-contract.md)
 - [Contributing](CONTRIBUTING.md)
+- [Release and publication](docs/releases.md)
 - [Architecture decision records](docs/adr/README.md)
 
 ## Non-negotiable test rules

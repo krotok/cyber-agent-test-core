@@ -1,0 +1,26 @@
+# Fully pinned Python 3.12 CI environment. Regenerate intentionally and review diffs.
+annotated-types==0.8.0
+build==1.5.0
+colorama==0.4.6
+coverage==7.15.3
+execnet==2.1.1
+iniconfig==2.3.0
+mypy==1.17.1
+mypy_extensions==1.1.0
+packaging==26.3
+pathspec==1.1.1
+pluggy==1.6.0
+pydantic==2.13.4
+pydantic_core==2.46.4
+Pygments==2.20.0
+pyproject_hooks==1.2.0
+pytest==9.1.1
+pytest-cov==7.1.0
+pytest-xdist==3.8.0
+PyYAML==6.0.3
+ruff==0.12.7
+setuptools==80.9.0
+types-PyYAML==6.0.12.20260724
+typing-inspection==0.4.2
+typing_extensions==4.16.0
+wheel==0.45.1

@@ -1,6 +1,7 @@
 """Validate the built wheel from an isolated virtual environment."""
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -14,11 +15,16 @@ def test_wheel_installs_and_runs_minimal_pytest(tmp_path: Path) -> None:
     wheel_dir = tmp_path / "wheel"
     venv_dir = tmp_path / "venv"
 
-    subprocess.run(
-        [sys.executable, "-m", "build", "--wheel", "--outdir", str(wheel_dir)],
-        cwd=project_root,
-        check=True,
-    )
+    supplied_wheel = os.environ.get("CORE_WHEEL_PATH")
+    if supplied_wheel is None:
+        subprocess.run(
+            [sys.executable, "-m", "build", "--wheel", "--outdir", str(wheel_dir)],
+            cwd=project_root,
+            check=True,
+        )
+    else:
+        wheel_dir.mkdir()
+        shutil.copy2(Path(supplied_wheel), wheel_dir)
     subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True)
 
     if os.name == "nt":
@@ -28,8 +34,27 @@ def test_wheel_installs_and_runs_minimal_pytest(tmp_path: Path) -> None:
 
     wheels = list(wheel_dir.glob("*.whl"))
     assert len(wheels) == 1
+    if supplied_wheel is not None:
+        subprocess.run(
+            [
+                str(venv_python),
+                "-m",
+                "pip",
+                "install",
+                "-r",
+                str(project_root / "requirements/ci.lock"),
+            ],
+            check=True,
+        )
     subprocess.run(
-        [str(venv_python), "-m", "pip", "install", str(wheels[0])],
+        [
+            str(venv_python),
+            "-m",
+            "pip",
+            "install",
+            *(["--no-deps"] if supplied_wheel is not None else []),
+            str(wheels[0]),
+        ],
         check=True,
     )
 
