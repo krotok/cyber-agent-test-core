@@ -1,0 +1,1 @@
+"""Internal operating-system adapters."""
