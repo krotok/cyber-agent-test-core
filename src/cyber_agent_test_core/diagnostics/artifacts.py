@@ -48,9 +48,7 @@ def redact_value(value: object) -> object:
     if isinstance(value, dict):
         return {
             str(key): (
-                "[REDACTED]"
-                if _SECRET_KEYS.search(str(key))
-                else redact_value(item)
+                "[REDACTED]" if _SECRET_KEYS.search(str(key)) else redact_value(item)
             )
             for key, item in value.items()
         }

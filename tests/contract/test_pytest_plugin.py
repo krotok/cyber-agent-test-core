@@ -1,5 +1,7 @@
 """Contract tests for the registered pytest plugin."""
 
+import json
+
 import pytest
 
 from cyber_agent_test_core.checks import AgentChecks
@@ -48,10 +50,34 @@ def test_lifecycle_options_are_registered(pytester: pytest.Pytester) -> None:
 
 def test_cleanup_never_is_rejected_in_shared_ci(pytester: pytest.Pytester) -> None:
     pytester.makepyfile("def test_not_run() -> None: pass")
-    result = pytester.runpytest(
-        "--shared-ci", "--cleanup-policy=never", "--no-cov"
-    )
+    result = pytester.runpytest("--shared-ci", "--cleanup-policy=never", "--no-cov")
     assert result.ret == pytest.ExitCode.USAGE_ERROR
-    result.stderr.fnmatch_lines(
-        ["*--cleanup-policy=never is forbidden in shared CI*"]
+    result.stderr.fnmatch_lines(["*--cleanup-policy=never is forbidden in shared CI*"])
+
+
+def test_writes_and_applies_execution_plan_shard(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(
+        """
+        import pytest
+
+        @pytest.mark.estimated_duration(10)
+        def test_long() -> None: pass
+
+        @pytest.mark.estimated_duration(1)
+        def test_short() -> None: pass
+        """
     )
+    plan_path = pytester.path / "plan.json"
+
+    result = pytester.runpytest(
+        "--core-shard-count=2",
+        "--core-shard-index=1",
+        f"--core-execution-plan={plan_path}",
+        "--no-cov",
+    )
+
+    result.assert_outcomes(passed=1)
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    assert plan["shard_count"] == 2
+    assert len(plan["selected_tests"]) == 2
+    assert {test["required_hosts"] for test in plan["selected_tests"]} == {1}

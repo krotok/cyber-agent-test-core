@@ -102,4 +102,3 @@ class ServiceState:
 
     name: str
     running: bool
-

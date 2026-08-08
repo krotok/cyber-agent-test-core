@@ -56,9 +56,7 @@ class LifecycleRuntime(Protocol):
     def register_agent(self, agent: AgentHandle) -> RegistrationResult: ...
     def wait_for_health(self, agent: AgentHandle) -> AgentHealth: ...
     def capabilities(self, agent: AgentHandle) -> CapabilitySet: ...
-    def collect_diagnostics(
-        self, host: object, level: DiagnosticDetail
-    ) -> None: ...
+    def collect_diagnostics(self, host: object, level: DiagnosticDetail) -> None: ...
 
     def diagnostic_attachments(self, host: object) -> dict[str, object]: ...
 
@@ -103,9 +101,7 @@ class DiagnosticsCollector:
                 values.setdefault(name, "not available from lifecycle runtime")
             for name, value in values.items():
                 attach_diagnostic(
-                    make_attachment(
-                        name, value, max_bytes=self._max_attachment_bytes
-                    )
+                    make_attachment(name, value, max_bytes=self._max_attachment_bytes)
                 )
             self._collected = True
 
@@ -160,8 +156,7 @@ def _core_lifecycle_safety_guard(
         and not execution_context.allow_full_diagnostics_in_prod
     ):
         pytest.fail(
-            "full diagnostics in production require "
-            "--allow-full-diagnostics-in-prod",
+            "full diagnostics in production require --allow-full-diagnostics-in-prod",
             pytrace=False,
         )
 
@@ -268,9 +263,7 @@ def execution_context(pytestconfig: pytest.Config) -> ExecutionContext:
         cleanup_policy=CleanupMode(pytestconfig.getoption("cleanup_policy")),
         diagnostics_level=DiagnosticDetail(pytestconfig.getoption("diagnostics_level")),
         shared_ci=bool(pytestconfig.getoption("shared_ci")),
-        allow_destructive_reuse=bool(
-            pytestconfig.getoption("allow_destructive_reuse")
-        ),
+        allow_destructive_reuse=bool(pytestconfig.getoption("allow_destructive_reuse")),
         allow_full_diagnostics_in_prod=bool(
             pytestconfig.getoption("allow_full_diagnostics_in_prod")
         ),

@@ -23,6 +23,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+distributed = ["pytest-xdist>=3.6,<4"]
 dev = [
     "build>=1.2",
     "mypy>=1.11",

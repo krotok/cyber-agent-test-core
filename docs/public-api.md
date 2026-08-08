@@ -4,6 +4,8 @@ Fixture lifecycle scopes, cleanup ordering, and safety flags are specified in
 [pytest-lifecycle.md](pytest-lifecycle.md).
 Allure metadata, structured logs, attachment safety, and failure categories are
 specified in [reporting-and-diagnostics.md](reporting-and-diagnostics.md).
+Distributed resources, execution plans, sharding, and result merging are specified
+in [distributed-execution.md](distributed-execution.md).
 
 ## Supported import surface
 
