@@ -313,6 +313,14 @@ business scenarios, and product tests know none of these implementation layers.
   request and response mapping, auth redaction, pagination, timeout/error
   taxonomy, feature flags, and version negotiation boundaries.
 
+The implementation uses typed API protocols over an injected `HTTPAdapter`.
+`HTTPBackendClient` owns correlation IDs, strict Pydantic response validation,
+token refresh, timeout and TLS/mTLS/proxy propagation. Retries are bounded to
+GET or calls carrying an idempotency key. Sanitized HTTP evidence masks secret
+headers, caps bodies, and suppresses production URLs and bodies by default.
+`FakeBackendClient` is the network-free test double. See
+[ADR-009](adr/009-safe-typed-backend-clients.md).
+
 ### 5.12 Flows
 
 - **Responsibility:** Offer reusable product-level workflows that compose public

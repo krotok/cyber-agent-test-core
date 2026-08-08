@@ -15,6 +15,7 @@ cross-cutting infrastructure.
 - [ADR-006: Centralized capability resolution](006-centralized-capability-resolution.md)
 - [ADR-007: Transport and OS controller separation](007-transport-os-controller-separation.md)
 - [ADR-008: Distributed laboratory host leasing](008-distributed-host-leasing.md)
+- [ADR-009: Safe typed backend clients](009-safe-typed-backend-clients.md)
 
 Copy [000-template.md](000-template.md), assign the next three-digit sequence
 number, and use a short kebab-case title. Once accepted, an ADR is immutable
