@@ -22,6 +22,12 @@ from cyber_agent_test_core.models.dsl import (
     ServiceState,
     ThreatDetectionResult,
 )
+from cyber_agent_test_core.models.lifecycle import (
+    CleanupMode,
+    DiagnosticDetail,
+    ExecutionContext,
+    HostPreparation,
+)
 
 __all__ = [
     "AgentHandle",
@@ -30,8 +36,12 @@ __all__ = [
     "Capability",
     "CapabilityContext",
     "CapabilitySet",
+    "CleanupMode",
     "CompatibilityResult",
+    "DiagnosticDetail",
     "EventRecord",
+    "ExecutionContext",
+    "HostPreparation",
     "LifecycleAction",
     "LifecycleResult",
     "LogUploadResult",

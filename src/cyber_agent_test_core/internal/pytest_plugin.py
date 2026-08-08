@@ -1,7 +1,9 @@
 """Private pytest integration exposed through the ``pytest11`` entry point."""
 
+import os
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from packaging.version import InvalidVersion, Version
@@ -61,6 +63,48 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         type=Path,
         help="path to the selected target capability context",
     )
+    group.addoption(
+        "--host-preparation",
+        choices=("clean-install", "reuse", "snapshot"),
+        default="clean-install",
+        dest="host_preparation",
+        help="leased-host baseline strategy (default: clean-install)",
+    )
+    group.addoption(
+        "--cleanup-policy",
+        choices=("always", "on-success", "never"),
+        default="always",
+        dest="cleanup_policy",
+        help="when framework state cleanup runs (default: always)",
+    )
+    group.addoption(
+        "--diagnostics-level",
+        choices=("basic", "extended", "full"),
+        default="basic",
+        dest="diagnostics_level",
+        help="failure diagnostic detail (default: basic)",
+    )
+    group.addoption(
+        "--allow-destructive-reuse",
+        action="store_true",
+        default=False,
+        dest="allow_destructive_reuse",
+        help="explicitly allow destructive tests on a reused host",
+    )
+    group.addoption(
+        "--shared-ci",
+        action="store_true",
+        default=bool(os.environ.get("CI")),
+        dest="shared_ci",
+        help="declare that hosts are shared by concurrent CI runs",
+    )
+    group.addoption(
+        "--allow-full-diagnostics-in-prod",
+        action="store_true",
+        default=False,
+        dest="allow_full_diagnostics_in_prod",
+        help="explicitly permit potentially sensitive full diagnostics in production",
+    )
 
 
 def _load_compatibility_result(config: pytest.Config) -> None:
@@ -94,10 +138,14 @@ def pytest_configure(config: pytest.Config) -> None:
         SUPPORTED_OS: "lists supported operating-system families",
         MIN_AGENT_VERSION: "requires at least the specified Agent version",
         MAX_AGENT_VERSION: "requires at most the specified Agent version",
+        "destructive": "changes host state and requires an isolated clean baseline",
+        "prod_safe": "audited for execution against a production environment",
     }
     for name, description in marker_descriptions.items():
         config.addinivalue_line("markers", f"{name}(*values): {description}")
     _load_compatibility_result(config)
+    if config.getoption("shared_ci") and config.getoption("cleanup_policy") == "never":
+        raise pytest.UsageError("--cleanup-policy=never is forbidden in shared CI")
 
 
 def _marker_strings(marker: pytest.Mark, marker_name: str) -> tuple[str, ...]:
@@ -222,6 +270,20 @@ def pytest_runtest_logreport(report: pytest.TestReport) -> None:
         if name == "core_skip_reason":
             attach_skip_reason(str(value))
             return
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(
+    item: pytest.Item,
+    call: pytest.CallInfo[object],
+) -> Iterator[None]:
+    """Expose the call outcome to fixture finalizers without global state."""
+    outcome: Any = yield
+    report = outcome.get_result()
+    if report.when == "call":
+        item.__dict__["_core_call_report"] = report
+    if report.when in {"setup", "call"} and report.failed:
+        item.__dict__["_core_lifecycle_failed"] = True
 
 
 def pytest_report_header(config: pytest.Config) -> str | None:

@@ -42,6 +42,7 @@ class DiagnosticsLevel(StrEnum):
 
     NONE = "none"
     BASIC = "basic"
+    EXTENDED = "extended"
     FULL = "full"
 
 
@@ -51,6 +52,9 @@ class HostPreparationMode(StrEnum):
     NONE = "none"
     VERIFY = "verify"
     RESET = "reset"
+    CLEAN_INSTALL = "clean-install"
+    REUSE = "reuse"
+    SNAPSHOT = "snapshot"
 
 
 class CredentialsReference(StrictConfigModel):

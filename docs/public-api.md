@@ -1,5 +1,8 @@
 # Public API Contract
 
+Fixture lifecycle scopes, cleanup ordering, and safety flags are specified in
+[pytest-lifecycle.md](pytest-lifecycle.md).
+
 ## Supported import surface
 
 Product tests may import only these modules:
