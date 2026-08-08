@@ -299,6 +299,12 @@ class FakeVerticalSliceRuntime:
             raise TypeError("expected FakeHostLease")
         self.lease_manager.release(lease)
 
+    def heartbeat_host(self, lease: object) -> None:
+        if not isinstance(lease, FakeHostLease):
+            raise TypeError("expected FakeHostLease")
+        if not self.lease_manager.is_leased(lease.host.logical_name):
+            raise RuntimeError("fake host lease was lost")
+
     def host(self, lease: object) -> Host:
         if not isinstance(lease, FakeHostLease):
             raise TypeError("expected FakeHostLease")

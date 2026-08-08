@@ -13,6 +13,15 @@ from cyber_agent_test_core.checks import (
     VersionChecks,
 )
 from cyber_agent_test_core.fixtures.lifecycle import (
+    _core_lifecycle_runtime as _core_lifecycle_runtime,
+)
+from cyber_agent_test_core.fixtures.lifecycle import (
+    _core_lifecycle_safety_guard as _core_lifecycle_safety_guard,
+)
+from cyber_agent_test_core.fixtures.lifecycle import (
+    _core_reporting_context as _core_reporting_context,
+)
+from cyber_agent_test_core.fixtures.lifecycle import (
     agent_controller,
     backend_client,
     capability_set,
@@ -25,7 +34,6 @@ from cyber_agent_test_core.fixtures.lifecycle import (
     host_lease,
     installed_agent,
     lab_inventory,
-    lifecycle_runtime,
     observed_agent_version,
     os_controller,
     registered_agent,
@@ -172,7 +180,6 @@ __all__ = [
     "installation_flow",
     "installed_agent",
     "lab_inventory",
-    "lifecycle_runtime",
     "log_checks",
     "log_upload_flow",
     "network_isolation_flow",

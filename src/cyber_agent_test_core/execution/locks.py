@@ -2,14 +2,21 @@
 
 import json
 import os
-from collections.abc import Callable
+import sys
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 from threading import RLock
-from typing import Protocol
+from typing import BinaryIO, Protocol
 from uuid import uuid4
+
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
 
 
 def utc_now() -> datetime:
@@ -44,7 +51,7 @@ class RedisLockProvider(DistributedLockProvider, Protocol):
 
 
 class FileLockProvider:
-    """Cross-process lock provider backed by atomic exclusive file creation."""
+    """Cross-process provider with serialized token compare-and-mutate operations."""
 
     def __init__(
         self,
@@ -61,6 +68,27 @@ class FileLockProvider:
         return self._directory / f"{sha256(key.encode()).hexdigest()}.lock"
 
     @staticmethod
+    @contextmanager
+    def _locked(path: Path) -> Iterator[BinaryIO]:
+        """Hold an OS file lock across the complete read/compare/write transaction."""
+        descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+        stream = os.fdopen(descriptor, "r+b", buffering=0)
+        stream.seek(0)
+        if sys.platform == "win32":
+            msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        try:
+            yield stream
+        finally:
+            stream.seek(0)
+            if sys.platform == "win32":
+                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+            stream.close()
+
+    @staticmethod
     def _payload(handle: LockHandle) -> str:
         """Serialize only lock metadata, never credentials or inventory data."""
         return json.dumps(
@@ -73,73 +101,89 @@ class FileLockProvider:
         )
 
     @staticmethod
-    def _read(path: Path) -> LockHandle | None:
-        """Read lock metadata; malformed files are treated as held."""
+    def _read(stream: BinaryIO) -> LockHandle | None:
+        """Read lock metadata while the caller owns the transaction lock."""
+        stream.seek(0)
+        text = stream.read().decode("utf-8").strip()
+        if not text:
+            return None
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(text)
             return LockHandle(
                 key=str(data["key"]),
                 owner=str(data["owner"]),
                 token=str(data["token"]),
                 expires_at=datetime.fromtimestamp(float(data["expires_at"]), UTC),
             )
-        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
-            return None
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+            raise RuntimeError("distributed file lock state is malformed") from error
+
+    @classmethod
+    def _write(cls, stream: BinaryIO, handle: LockHandle | None) -> None:
+        """Replace state without releasing the transaction lock."""
+        value = "\n" if handle is None else cls._payload(handle)
+        stream.seek(0)
+        stream.truncate()
+        stream.write(value.encode("utf-8"))
+        stream.flush()
+        os.fsync(stream.fileno())
 
     def acquire(self, key: str, owner: str, ttl: timedelta) -> LockHandle | None:
         """Acquire atomically, reclaiming only a proven expired lock."""
         if ttl <= timedelta(0):
             raise ValueError("lock ttl must be positive")
         path = self._path(key)
-        for _ in range(2):
-            handle = LockHandle(key, owner, uuid4().hex, self._clock() + ttl)
+        with self._locked(path) as stream:
             try:
-                descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            except FileExistsError:
-                existing = self._read(path)
-                if existing is None or existing.expires_at > self._clock():
-                    return None
-                try:
-                    path.unlink()
-                except FileNotFoundError:
-                    pass
-                continue
-            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                stream.write(self._payload(handle))
+                existing = self._read(stream)
+            except RuntimeError:
+                return None
+            if existing is not None and existing.expires_at > self._clock():
+                return None
+            handle = LockHandle(key, owner, uuid4().hex, self._clock() + ttl)
+            self._write(stream, handle)
             return handle
-        return None
 
     def refresh(self, handle: LockHandle, ttl: timedelta) -> LockHandle | None:
         """Extend a lock only when its ownership token still matches."""
         path = self._path(handle.key)
-        current = self._read(path)
-        if current is None or current.token != handle.token:
-            return None
-        refreshed = LockHandle(
-            handle.key,
-            handle.owner,
-            handle.token,
-            self._clock() + ttl,
-        )
-        path.write_text(self._payload(refreshed), encoding="utf-8")
-        return refreshed
+        with self._locked(path) as stream:
+            try:
+                current = self._read(stream)
+            except RuntimeError:
+                return None
+            if current is None or current.token != handle.token:
+                return None
+            refreshed = LockHandle(
+                handle.key,
+                handle.owner,
+                handle.token,
+                self._clock() + ttl,
+            )
+            self._write(stream, refreshed)
+            return refreshed
 
     def release(self, handle: LockHandle) -> bool:
         """Release only the lock identified by the caller's ownership token."""
         path = self._path(handle.key)
-        current = self._read(path)
-        if current is None or current.token != handle.token:
-            return False
-        try:
-            path.unlink()
-        except FileNotFoundError:
-            return False
-        return True
+        with self._locked(path) as stream:
+            try:
+                current = self._read(stream)
+            except RuntimeError:
+                return False
+            if current is None or current.token != handle.token:
+                return False
+            self._write(stream, None)
+            return True
 
     def is_locked(self, key: str) -> bool:
         """Return whether a non-expired lock currently owns the key."""
-        current = self._read(self._path(key))
-        return current is not None and current.expires_at > self._clock()
+        with self._locked(self._path(key)) as stream:
+            try:
+                current = self._read(stream)
+            except RuntimeError:
+                return True
+            return current is not None and current.expires_at > self._clock()
 
 
 class FakeLockProvider:

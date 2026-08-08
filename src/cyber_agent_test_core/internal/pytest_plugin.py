@@ -133,6 +133,13 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="maximum bytes per redacted diagnostic attachment",
     )
     group.addoption(
+        "--host-lease-heartbeat-seconds",
+        type=float,
+        default=30.0,
+        dest="host_lease_heartbeat_seconds",
+        help="interval for framework-owned host lease renewal",
+    )
+    group.addoption(
         "--fake-vertical-slice",
         action="store_true",
         default=False,
@@ -238,6 +245,8 @@ def pytest_configure(config: pytest.Config) -> None:
         raise pytest.UsageError(
             "--diagnostics-max-attachment-bytes must be at least 128"
         )
+    if config.getoption("host_lease_heartbeat_seconds") <= 0:
+        raise pytest.UsageError("--host-lease-heartbeat-seconds must be positive")
     shard_count = int(config.getoption("core_shard_count"))
     shard_index = int(config.getoption("core_shard_index"))
     if shard_count < 1 or not 0 <= shard_index < shard_count:

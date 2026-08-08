@@ -1,6 +1,7 @@
 """Common lifecycle fixtures composed over an environment-owned runtime."""
 
 from collections.abc import Iterator
+from threading import Event, Thread
 from typing import Protocol
 
 import pytest
@@ -42,6 +43,7 @@ class LifecycleRuntime(Protocol):
     def lab_inventory(self, name: str) -> LaboratoryConfig: ...
     def acquire_host(self, config: TestRunConfig) -> object: ...
     def release_host(self, lease: object) -> None: ...
+    def heartbeat_host(self, lease: object) -> None: ...
     def host(self, lease: object) -> object: ...
     def prepare_host(self, host: object, mode: HostPreparation) -> None: ...
     def cleanup_host(self, host: object) -> None: ...
@@ -84,28 +86,39 @@ class DiagnosticsCollector:
     def collect(self) -> None:
         """Collect at most once, including when several finalizers observe failure."""
         if not self._collected:
-            self._runtime.collect_diagnostics(self._host, self._level)
-            provider = getattr(self._runtime, "diagnostic_attachments", None)
-            values: dict[str, object] = {} if provider is None else provider(self._host)
-            values["test config"] = self._test_config.model_dump(mode="json")
-            required = (
-                "Agent logs",
-                "installer logs",
-                "service status",
-                "process list",
-                "OS info",
-                "backend response",
-                "redacted command",
-                "Agent events",
-                "network diagnostics",
-            )
-            for name in required:
-                values.setdefault(name, "not available from lifecycle runtime")
-            for name, value in values.items():
-                attach_diagnostic(
-                    make_attachment(name, value, max_bytes=self._max_attachment_bytes)
-                )
             self._collected = True
+            try:
+                self._runtime.collect_diagnostics(self._host, self._level)
+                provider = getattr(self._runtime, "diagnostic_attachments", None)
+                values: dict[str, object] = (
+                    {} if provider is None else provider(self._host)
+                )
+                values["test config"] = self._test_config.model_dump(mode="json")
+                required = (
+                    "Agent logs",
+                    "installer logs",
+                    "service status",
+                    "process list",
+                    "OS info",
+                    "backend response",
+                    "redacted command",
+                    "Agent events",
+                    "network diagnostics",
+                )
+                for name in required:
+                    values.setdefault(name, "not available from lifecycle runtime")
+                for name, value in values.items():
+                    attach_diagnostic(
+                        make_attachment(
+                            name,
+                            value,
+                            max_bytes=self._max_attachment_bytes,
+                        )
+                    )
+            except Exception:
+                # Failure evidence is best-effort and must never replace the primary
+                # product, infrastructure, setup, or cleanup exception.
+                return
 
 
 _LIFECYCLE_FIXTURES = frozenset(
@@ -148,6 +161,14 @@ def _core_lifecycle_safety_guard(
     environment = request.getfixturevalue("environment_config")
     if not environment.is_production:
         return
+    run_config = request.getfixturevalue("test_run_config")
+    if not run_config.production_approved:
+        pytest.fail(
+            "production execution requires production_approved=true",
+            pytrace=False,
+        )
+    if destructive:
+        pytest.fail("destructive tests are forbidden in production", pytrace=False)
     if request.node.get_closest_marker("prod_safe") is None:
         pytest.fail(
             "production permits only tests explicitly marked prod_safe",
@@ -173,8 +194,10 @@ def _text(value: object) -> str:
 @pytest.fixture(autouse=True)
 def _core_reporting_context(
     request: pytest.FixtureRequest,
+    _core_lifecycle_safety_guard: None,
 ) -> Iterator[None]:
     """Bind Allure and logging metadata only for host lifecycle tests."""
+    del _core_lifecycle_safety_guard
     if not _LIFECYCLE_FIXTURES.intersection(request.fixturenames):
         yield
         return
@@ -245,8 +268,8 @@ def _core_reporting_context(
         reset_logging_context(token)
 
 
-@pytest.fixture(scope="session")
-def lifecycle_runtime(pytestconfig: pytest.Config) -> LifecycleRuntime:
+@pytest.fixture(scope="session", name="lifecycle_runtime")
+def _core_lifecycle_runtime(pytestconfig: pytest.Config) -> LifecycleRuntime:
     """Lab composition root (session scope because it owns shared adapters)."""
     if pytestconfig.getoption("fake_vertical_slice"):
         from cyber_agent_test_core.testing import FakeVerticalSliceRuntime
@@ -300,13 +323,53 @@ def lab_inventory(
 def host_lease(
     lifecycle_runtime: LifecycleRuntime,
     test_run_config: TestRunConfig,
+    pytestconfig: pytest.Config,
 ) -> Iterator[object]:
-    """Function-scoped exclusive ownership; release is unconditional."""
+    """Function-scoped ownership with heartbeat and unconditional release."""
     lease = lifecycle_runtime.acquire_host(test_run_config)
+    interval = float(pytestconfig.getoption("host_lease_heartbeat_seconds"))
+    lease_duration = getattr(lease, "lease_duration", None)
+    if lease_duration is not None and hasattr(lease_duration, "total_seconds"):
+        interval = min(interval, float(lease_duration.total_seconds()) / 3)
+    stop = Event()
+    heartbeat_errors: list[Exception] = []
+
+    def heartbeat() -> None:
+        while not stop.wait(interval):
+            try:
+                lifecycle_runtime.heartbeat_host(lease)
+            except Exception as error:
+                heartbeat_errors.append(error)
+                return
+
+    thread = Thread(
+        target=heartbeat,
+        name=f"core-host-heartbeat-{test_run_config.execution_id}",
+        daemon=True,
+    )
+    thread.start()
     try:
         yield lease
     finally:
-        lifecycle_runtime.release_host(lease)
+        stop.set()
+        thread.join(timeout=interval + 1)
+        if thread.is_alive():
+            heartbeat_errors.append(
+                RuntimeError("host lease heartbeat did not stop within its bound")
+            )
+        release_error: Exception | None = None
+        try:
+            lifecycle_runtime.release_host(lease)
+        except Exception as error:
+            release_error = error
+        if release_error is not None:
+            if heartbeat_errors:
+                release_error.add_note(
+                    f"heartbeat also failed: {heartbeat_errors[0]}"
+                )
+            raise release_error
+        if heartbeat_errors:
+            raise heartbeat_errors[0]
 
 
 @pytest.fixture
@@ -326,6 +389,7 @@ def clean_host(
     lifecycle_runtime: LifecycleRuntime,
     execution_context: ExecutionContext,
     host: object,
+    diagnostics_collector: DiagnosticsCollector,
 ) -> Iterator[object]:
     """Per-test baseline with policy cleanup and mandatory verification."""
     lifecycle_runtime.prepare_host(host, execution_context.host_preparation)
@@ -334,9 +398,13 @@ def clean_host(
     if cleanup is CleanupMode.ALWAYS or (
         cleanup is CleanupMode.ON_SUCCESS and _test_succeeded(request)
     ):
-        lifecycle_runtime.cleanup_host(host)
-        if not lifecycle_runtime.verify_cleanup(host):
-            raise AssertionError("host cleanup verification failed")
+        try:
+            lifecycle_runtime.cleanup_host(host)
+            if not lifecycle_runtime.verify_cleanup(host):
+                raise AssertionError("host cleanup verification failed")
+        except Exception:
+            diagnostics_collector.collect()
+            raise
 
 
 @pytest.fixture
@@ -400,9 +468,12 @@ def installed_agent(
     agent = lifecycle_runtime.agent_handle(clean_host)
     try:
         lifecycle_runtime.install_agent(agent, test_run_config.agent_version)
-    except Exception:
+    except Exception as install_error:
         if test_run_config.upgrade_from_version is not None:
-            lifecycle_runtime.rollback_agent(agent)
+            try:
+                lifecycle_runtime.rollback_agent(agent)
+            except Exception as rollback_error:
+                install_error.add_note(f"rollback also failed: {rollback_error}")
         diagnostics_collector.collect()
         raise
     yield agent
@@ -412,7 +483,11 @@ def installed_agent(
     if cleanup is CleanupMode.ALWAYS or (
         cleanup is CleanupMode.ON_SUCCESS and _test_succeeded(request)
     ):
-        lifecycle_runtime.uninstall_agent(agent)
+        try:
+            lifecycle_runtime.uninstall_agent(agent)
+        except Exception:
+            diagnostics_collector.collect()
+            raise
 
 
 @pytest.fixture

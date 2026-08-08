@@ -15,6 +15,9 @@ _BEARER = re.compile(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]+")
 _KEY_VALUE = re.compile(
     r"(?i)\b(password|passwd|token|secret|api[_-]?key)\s*([=:])\s*([^\s,;&]+)"
 )
+_URL_CREDENTIALS = re.compile(
+    r"(?i)\b(https?://)([^\s/@:]+):([^\s/@]+)@"
+)
 
 
 class FailureCategory(StrEnum):
@@ -37,7 +40,8 @@ class DiagnosticAttachment:
 
 def redact_text(value: str) -> str:
     """Redact common credential representations while preserving diagnostics."""
-    redacted = _BEARER.sub(lambda match: f"{match.group(1)} [REDACTED]", value)
+    redacted = _URL_CREDENTIALS.sub(r"\1[REDACTED]@", value)
+    redacted = _BEARER.sub(lambda match: f"{match.group(1)} [REDACTED]", redacted)
     return _KEY_VALUE.sub(
         lambda match: f"{match.group(1)}{match.group(2)}[REDACTED]", redacted
     )

@@ -7,6 +7,7 @@ import pytest
 from cyber_agent_test_core.execution import (
     FakeLockProvider,
     ResourceKind,
+    ResourceLeaseLostError,
     ResourceLeaseManager,
     ResourceRequest,
     ResourceType,
@@ -53,3 +54,42 @@ def test_partial_acquisition_is_unwound() -> None:
         manager.acquire(requests, owner="job", ttl=timedelta(minutes=1))
 
     assert not provider.is_locked("cyber-agent-test-core:host:h:0")
+
+
+def test_refreshes_all_mutable_resource_fencing_tokens() -> None:
+    provider = FakeLockProvider()
+    manager = ResourceLeaseManager(provider)
+    lease = manager.acquire(
+        (
+            ResourceRequest(ResourceType.TENANT, "tenant", ResourceKind.EXCLUSIVE),
+            ResourceRequest(ResourceType.LICENSE, "license", ResourceKind.STATEFUL),
+        ),
+        owner="job",
+        ttl=timedelta(minutes=1),
+    )
+
+    refreshed = manager.refresh(lease, ttl=timedelta(minutes=2))
+
+    assert [handle.token for handle in refreshed.handles] == [
+        handle.token for handle in lease.handles
+    ]
+    assert all(
+        refreshed_handle.expires_at > original.expires_at
+        for refreshed_handle, original in zip(
+            refreshed.handles, lease.handles, strict=True
+        )
+    )
+
+
+def test_refresh_reports_lost_resource_ownership() -> None:
+    provider = FakeLockProvider()
+    manager = ResourceLeaseManager(provider)
+    lease = manager.acquire(
+        (ResourceRequest(ResourceType.TEST_USER, "user", ResourceKind.EXCLUSIVE),),
+        owner="job",
+        ttl=timedelta(minutes=1),
+    )
+    provider.force_loss(lease.handles[0].key)
+
+    with pytest.raises(ResourceLeaseLostError):
+        manager.refresh(lease, ttl=timedelta(minutes=1))

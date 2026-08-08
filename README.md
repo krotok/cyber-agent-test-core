@@ -49,6 +49,7 @@ Everything else is private, even if Python makes it technically importable.
 - [Contributing](CONTRIBUTING.md)
 - [Release and publication](docs/releases.md)
 - [Fake vertical slice](docs/fake-vertical-slice.md)
+- [Principal SDET architecture review](docs/reviews/core-16-principal-sdet-review.md)
 - [Architecture decision records](docs/adr/README.md)
 
 ## Non-negotiable test rules

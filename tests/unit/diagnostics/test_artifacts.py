@@ -22,6 +22,14 @@ def test_redacts_text_credentials_without_removing_context() -> None:
     assert redacted.count("[REDACTED]") == 2
 
 
+def test_redacts_url_userinfo_credentials() -> None:
+    redacted = redact_text("proxy=https://user:password@proxy.invalid/path")
+
+    assert "user" not in redacted
+    assert "password" not in redacted
+    assert redacted == "proxy=https://[REDACTED]@proxy.invalid/path"
+
+
 def test_recursively_redacts_secret_keys() -> None:
     value = {"token": "secret-value", "nested": [{"api_key": "key-value"}]}
 

@@ -39,6 +39,8 @@ class StructuredContextFilter(logging.Filter):
     """Add stable context fields to ordinary standard-library log records."""
 
     def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = redact_text(record.getMessage())
+        record.args = ()
         context = _CONTEXT.get()
         values = {} if context is None else asdict(context)
         for name, value in values.items():

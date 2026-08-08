@@ -28,6 +28,7 @@ from cyber_agent_test_core.execution.planning import (
 from cyber_agent_test_core.execution.resources import (
     ResourceKind,
     ResourceLease,
+    ResourceLeaseLostError,
     ResourceLeaseManager,
     ResourceRequest,
     ResourceType,
@@ -52,6 +53,7 @@ __all__ = [
     "RedisLockProvider",
     "ResourceKind",
     "ResourceLease",
+    "ResourceLeaseLostError",
     "ResourceLeaseManager",
     "ResourceRequest",
     "ResourceType",

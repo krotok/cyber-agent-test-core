@@ -58,6 +58,10 @@ class ResourceUnavailableError(RuntimeError):
     """At least one atomic resource lock could not be acquired."""
 
 
+class ResourceLeaseLostError(RuntimeError):
+    """A resource fencing token could not be renewed."""
+
+
 class ResourceLeaseManager:
     """Acquire heterogeneous locks in stable order and unwind atomically."""
 
@@ -125,3 +129,17 @@ class ResourceLeaseManager:
         """Release in reverse acquisition order using fencing tokens."""
         for handle in reversed(lease.handles):
             self._provider.release(handle)
+
+    def refresh(self, lease: ResourceLease, *, ttl: timedelta) -> ResourceLease:
+        """Renew every fencing token or report that aggregate ownership was lost."""
+        if ttl <= timedelta(0):
+            raise ValueError("lock ttl must be positive")
+        refreshed: list[LockHandle] = []
+        for handle in lease.handles:
+            renewed = self._provider.refresh(handle, ttl)
+            if renewed is None:
+                raise ResourceLeaseLostError(
+                    f"resource lease ownership lost: {handle.key}"
+                )
+            refreshed.append(renewed)
+        return ResourceLease(lease.owner, tuple(refreshed), lease.immutable)
