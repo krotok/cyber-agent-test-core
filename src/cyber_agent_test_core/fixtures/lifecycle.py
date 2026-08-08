@@ -5,11 +5,13 @@ from typing import Protocol
 
 import pytest
 
+from cyber_agent_test_core.api import CORE_VERSION
 from cyber_agent_test_core.config import (
     EnvironmentConfig,
     LaboratoryConfig,
     TestRunConfig,
 )
+from cyber_agent_test_core.diagnostics.artifacts import make_attachment
 from cyber_agent_test_core.models import (
     AgentHandle,
     AgentHealth,
@@ -19,6 +21,15 @@ from cyber_agent_test_core.models import (
     ExecutionContext,
     HostPreparation,
     RegistrationResult,
+)
+from cyber_agent_test_core.reporting.allure import (
+    apply_test_metadata,
+    attach_diagnostic,
+)
+from cyber_agent_test_core.reporting.context import (
+    LoggingContext,
+    bind_logging_context,
+    reset_logging_context,
 )
 
 
@@ -49,6 +60,8 @@ class LifecycleRuntime(Protocol):
         self, host: object, level: DiagnosticDetail
     ) -> None: ...
 
+    def diagnostic_attachments(self, host: object) -> dict[str, object]: ...
+
 
 class DiagnosticsCollector:
     """Idempotent per-test diagnostic collection facade."""
@@ -58,16 +71,42 @@ class DiagnosticsCollector:
         runtime: LifecycleRuntime,
         host: object,
         level: DiagnosticDetail,
+        test_config: TestRunConfig,
+        max_attachment_bytes: int,
     ) -> None:
         self._runtime = runtime
         self._host = host
         self._level = level
+        self._test_config = test_config
+        self._max_attachment_bytes = max_attachment_bytes
         self._collected = False
 
     def collect(self) -> None:
         """Collect at most once, including when several finalizers observe failure."""
         if not self._collected:
             self._runtime.collect_diagnostics(self._host, self._level)
+            provider = getattr(self._runtime, "diagnostic_attachments", None)
+            values: dict[str, object] = {} if provider is None else provider(self._host)
+            values["test config"] = self._test_config.model_dump(mode="json")
+            required = (
+                "Agent logs",
+                "installer logs",
+                "service status",
+                "process list",
+                "OS info",
+                "backend response",
+                "redacted command",
+                "Agent events",
+                "network diagnostics",
+            )
+            for name in required:
+                values.setdefault(name, "not available from lifecycle runtime")
+            for name, value in values.items():
+                attach_diagnostic(
+                    make_attachment(
+                        name, value, max_bytes=self._max_attachment_bytes
+                    )
+                )
             self._collected = True
 
 
@@ -125,6 +164,88 @@ def _core_lifecycle_safety_guard(
             "--allow-full-diagnostics-in-prod",
             pytrace=False,
         )
+
+
+def _text(value: object) -> str:
+    """Normalize enums and optional metadata for reporting."""
+    if value is None:
+        return "not-set"
+    return str(getattr(value, "value", value))
+
+
+@pytest.fixture(autouse=True)
+def _core_reporting_context(
+    request: pytest.FixtureRequest,
+) -> Iterator[None]:
+    """Bind Allure and logging metadata only for host lifecycle tests."""
+    if not _LIFECYCLE_FIXTURES.intersection(request.fixturenames):
+        yield
+        return
+    config = request.getfixturevalue("test_run_config")
+    host_value = request.getfixturevalue("host")
+    ci = config.ci_context
+    os_value = getattr(host_value, "operating_system", "unknown")
+    os_version = getattr(host_value, "os_version", "unknown")
+    host_name = _text(
+        getattr(host_value, "logical_name", getattr(host_value, "host_id", "unknown"))
+    )
+    parameters = {
+        "Agent version": config.agent_version,
+        "backend version": config.backend_version,
+        "environment": config.environment,
+        "laboratory": config.lab,
+        "host": host_name,
+        "OS": _text(os_value),
+        "OS version": _text(os_version),
+        "architecture": _text(config.architecture),
+        "enabled features": ", ".join(sorted(config.enabled_features)) or "none",
+        "disabled features": ", ".join(sorted(config.disabled_features)) or "none",
+        "suite": config.suite,
+        "tenant reference": config.tenant.reference,
+        "install mode": _text(config.install_mode),
+        "upgrade-from version": _text(config.upgrade_from_version),
+        "git commit": config.git_commit,
+        "CI build ID": _text(ci.job_id),
+        "CI build URL": _text(ci.build_url),
+        "package build": config.build_id,
+        "execution ID": config.execution_id,
+        "core framework version": CORE_VERSION,
+    }
+    parameters["launch name"] = (
+        f"Agent {config.agent_version} | Backend {config.backend_version} | "
+        f"{_text(os_value).title()} {_text(os_version)} | "
+        f"{config.suite.title()} | {config.environment.title()}"
+    )
+    feature_marker = request.node.get_closest_marker("allure_feature")
+    story_marker = request.node.get_closest_marker("allure_story")
+    if feature_marker and feature_marker.args:
+        feature = str(feature_marker.args[0])
+    elif "registered_agent" in request.fixturenames:
+        feature = "Registration"
+    else:
+        feature = _text(config.install_mode).replace("-", " ").title()
+    story = (
+        str(story_marker.args[0])
+        if story_marker and story_marker.args
+        else request.node.name
+    )
+    apply_test_metadata(parameters, feature=feature, story=story)
+    token = bind_logging_context(
+        LoggingContext(
+            execution_id=config.execution_id,
+            test_id=request.node.nodeid,
+            host=host_name,
+            environment=config.environment,
+            lab=config.lab,
+            agent_version=config.agent_version,
+            backend_version=config.backend_version,
+            ci_build_id=ci.job_id,
+        )
+    )
+    try:
+        yield
+    finally:
+        reset_logging_context(token)
 
 
 @pytest.fixture(scope="session")
@@ -247,11 +368,17 @@ def diagnostics_collector(
     request: pytest.FixtureRequest,
     lifecycle_runtime: LifecycleRuntime,
     execution_context: ExecutionContext,
+    test_run_config: TestRunConfig,
+    pytestconfig: pytest.Config,
     host: object,
 ) -> Iterator[DiagnosticsCollector]:
     """Per-test failure diagnostics, collected before host cleanup/release."""
     collector = DiagnosticsCollector(
-        lifecycle_runtime, host, execution_context.diagnostics_level
+        lifecycle_runtime,
+        host,
+        execution_context.diagnostics_level,
+        test_run_config,
+        int(pytestconfig.getoption("diagnostics_max_attachment_bytes")),
     )
     yield collector
     if bool(getattr(request.node, "_core_lifecycle_failed", False)):

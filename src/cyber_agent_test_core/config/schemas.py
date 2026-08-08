@@ -203,6 +203,7 @@ class CIContext(StrictConfigModel):
     job_id: str | None = None
     run_id: str | None = None
     worker_id: str | None = None
+    build_url: AnyUrl | None = None
 
 
 class TestRunConfig(StrictConfigModel):

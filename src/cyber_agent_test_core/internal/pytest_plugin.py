@@ -15,6 +15,10 @@ from cyber_agent_test_core.capabilities import (
     load_capability_context,
     load_compatibility_matrix,
 )
+from cyber_agent_test_core.diagnostics.artifacts import (
+    classify_exception,
+    make_attachment,
+)
 from cyber_agent_test_core.markers import (
     FRAMEWORK_CONTRACT,
     INCOMPATIBLE_FEATURE,
@@ -29,7 +33,11 @@ from cyber_agent_test_core.models import (
     CompatibilityResult,
     OperatingSystemFamily,
 )
-from cyber_agent_test_core.reporting.allure import attach_skip_reason
+from cyber_agent_test_core.reporting.allure import (
+    attach_diagnostic,
+    attach_failure_category,
+    attach_skip_reason,
+)
 
 pytest_plugins = ("cyber_agent_test_core.fixtures",)
 
@@ -105,6 +113,13 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         dest="allow_full_diagnostics_in_prod",
         help="explicitly permit potentially sensitive full diagnostics in production",
     )
+    group.addoption(
+        "--diagnostics-max-attachment-bytes",
+        type=int,
+        default=2 * 1024 * 1024,
+        dest="diagnostics_max_attachment_bytes",
+        help="maximum bytes per redacted diagnostic attachment",
+    )
 
 
 def _load_compatibility_result(config: pytest.Config) -> None:
@@ -140,12 +155,20 @@ def pytest_configure(config: pytest.Config) -> None:
         MAX_AGENT_VERSION: "requires at most the specified Agent version",
         "destructive": "changes host state and requires an isolated clean baseline",
         "prod_safe": "audited for execution against a production environment",
+        "allure_feature": (
+            "Allure Feature label: Installation, Registration, Upgrade, Protection"
+        ),
+        "allure_story": "Allure Story label describing concrete behavior",
     }
     for name, description in marker_descriptions.items():
         config.addinivalue_line("markers", f"{name}(*values): {description}")
     _load_compatibility_result(config)
     if config.getoption("shared_ci") and config.getoption("cleanup_policy") == "never":
         raise pytest.UsageError("--cleanup-policy=never is forbidden in shared CI")
+    if config.getoption("diagnostics_max_attachment_bytes") < 128:
+        raise pytest.UsageError(
+            "--diagnostics-max-attachment-bytes must be at least 128"
+        )
 
 
 def _marker_strings(marker: pytest.Mark, marker_name: str) -> tuple[str, ...]:
@@ -284,6 +307,17 @@ def pytest_runtest_makereport(
         item.__dict__["_core_call_report"] = report
     if report.when in {"setup", "call"} and report.failed:
         item.__dict__["_core_lifecycle_failed"] = True
+    if report.failed and call.excinfo is not None:
+        category = classify_exception(call.excinfo.value)
+        report.user_properties.append(("failure_category", category.value))
+        attach_failure_category(category.value)
+        limit = int(item.config.getoption("diagnostics_max_attachment_bytes"))
+        for section_name, content in report.sections:
+            lowered = section_name.lower()
+            if "stdout" in lowered or "stderr" in lowered:
+                attach_diagnostic(
+                    make_attachment(section_name, content, max_bytes=limit)
+                )
 
 
 def pytest_report_header(config: pytest.Config) -> str | None:
