@@ -20,6 +20,7 @@ from cyber_agent_test_core.models import (
     DiagnosticDetail,
     ExecutionContext,
     HostPreparation,
+    OperatingSystemFamily,
     RegistrationResult,
 )
 from cyber_agent_test_core.reporting.allure import (
@@ -56,6 +57,7 @@ class LifecycleRuntime(Protocol):
     def register_agent(self, agent: AgentHandle) -> RegistrationResult: ...
     def wait_for_health(self, agent: AgentHandle) -> AgentHealth: ...
     def capabilities(self, agent: AgentHandle) -> CapabilitySet: ...
+    def observed_agent_version(self, agent: AgentHandle) -> str | None: ...
     def collect_diagnostics(self, host: object, level: DiagnosticDetail) -> None: ...
 
     def diagnostic_attachments(self, host: object) -> dict[str, object]: ...
@@ -244,8 +246,14 @@ def _core_reporting_context(
 
 
 @pytest.fixture(scope="session")
-def lifecycle_runtime() -> LifecycleRuntime:
+def lifecycle_runtime(pytestconfig: pytest.Config) -> LifecycleRuntime:
     """Lab composition root (session scope because it owns shared adapters)."""
+    if pytestconfig.getoption("fake_vertical_slice"):
+        from cyber_agent_test_core.testing import FakeVerticalSliceRuntime
+
+        return FakeVerticalSliceRuntime(
+            OperatingSystemFamily(pytestconfig.getoption("fake_os"))
+        )
     raise RuntimeError("the test environment must provide lifecycle_runtime")
 
 
@@ -384,9 +392,11 @@ def installed_agent(
     lifecycle_runtime: LifecycleRuntime,
     test_run_config: TestRunConfig,
     clean_host: object,
+    agent_controller: object,
     diagnostics_collector: DiagnosticsCollector,
 ) -> Iterator[AgentHandle]:
     """Install per test; rollback failed transitions and uninstall when cleaning."""
+    del agent_controller
     agent = lifecycle_runtime.agent_handle(clean_host)
     try:
         lifecycle_runtime.install_agent(agent, test_run_config.agent_version)
@@ -419,8 +429,10 @@ def running_agent(
 def registered_agent(
     lifecycle_runtime: LifecycleRuntime,
     running_agent: AgentHandle,
+    backend_client: object,
 ) -> RegistrationResult:
     """Function-scoped backend registration, isolated with its Agent lifecycle."""
+    del backend_client
     return lifecycle_runtime.register_agent(running_agent)
 
 
@@ -440,3 +452,12 @@ def capability_set(
 ) -> CapabilitySet:
     """Capabilities are resolved per leased host and installed Agent version."""
     return lifecycle_runtime.capabilities(running_agent)
+
+
+@pytest.fixture
+def observed_agent_version(
+    lifecycle_runtime: LifecycleRuntime,
+    running_agent: AgentHandle,
+) -> str | None:
+    """Return the OS-neutral version observed from the current Agent."""
+    return lifecycle_runtime.observed_agent_version(running_agent)

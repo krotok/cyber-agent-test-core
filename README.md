@@ -48,6 +48,7 @@ Everything else is private, even if Python makes it technically importable.
 - [Thin tests contract](docs/thin-tests-contract.md)
 - [Contributing](CONTRIBUTING.md)
 - [Release and publication](docs/releases.md)
+- [Fake vertical slice](docs/fake-vertical-slice.md)
 - [Architecture decision records](docs/adr/README.md)
 
 ## Non-negotiable test rules

@@ -6,6 +6,8 @@ Allure metadata, structured logs, attachment safety, and failure categories are
 specified in [reporting-and-diagnostics.md](reporting-and-diagnostics.md).
 Distributed resources, execution plans, sharding, and result merging are specified
 in [distributed-execution.md](distributed-execution.md).
+The packaged, remote-machine-free lifecycle example is documented in
+[fake-vertical-slice.md](fake-vertical-slice.md).
 
 ## Supported import surface
 

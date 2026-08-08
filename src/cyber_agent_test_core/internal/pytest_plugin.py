@@ -133,6 +133,20 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="maximum bytes per redacted diagnostic attachment",
     )
     group.addoption(
+        "--fake-vertical-slice",
+        action="store_true",
+        default=False,
+        dest="fake_vertical_slice",
+        help="run lifecycle fixtures against packaged in-memory fakes",
+    )
+    group.addoption(
+        "--fake-os",
+        choices=("linux", "windows", "macos"),
+        default="linux",
+        dest="fake_os",
+        help="operating system exposed by the fake vertical slice",
+    )
+    group.addoption(
         "--core-shard-count",
         type=int,
         default=int(os.environ.get("CI_NODE_TOTAL", "1")),

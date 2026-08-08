@@ -64,13 +64,23 @@ def test_wheel_installs_and_runs_minimal_pytest(tmp_path: Path) -> None:
 from cyber_agent_test_core import api, checks, fixtures, flows, markers, models
 
 
-def test_installed_public_api(core_version: str) -> None:
+def test_installed_public_api(
+    core_version: str,
+    registered_agent,
+    healthy_agent,
+    observed_agent_version,
+    agent_checks,
+    version_checks,
+) -> None:
     assert api.CORE_VERSION == core_version
     assert checks is not None
     assert fixtures is not None
     assert flows is not None
     assert markers.FRAMEWORK_CONTRACT == "framework_contract"
     assert models is not None
+    agent_checks.is_registered(registered_agent)
+    agent_checks.is_healthy(healthy_agent)
+    version_checks.equals(observed_agent_version, "4.8.1")
 """,
         encoding="utf-8",
     )
@@ -82,6 +92,8 @@ def test_installed_public_api(core_version: str) -> None:
             "-p",
             "no:cacheprovider",
             "-q",
+            "--fake-vertical-slice",
+            "--fake-os=linux",
             str(smoke_test),
         ],
         cwd=tmp_path,
