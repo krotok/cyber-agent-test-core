@@ -51,8 +51,8 @@ jobs:
     name: 1 - lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: {python-version: "3.12", cache: pip, cache-dependency-path: requirements/ci.lock}
       - run: python -m pip install -r requirements/ci.lock
       - run: ruff check src tests tools
@@ -62,8 +62,8 @@ jobs:
     name: 2 - type check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: {python-version: "3.12", cache: pip, cache-dependency-path: requirements/ci.lock}
       - run: python -m pip install -r requirements/ci.lock
       - run: python -m pip install --no-deps -e .
@@ -77,8 +77,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: {python-version: "3.12", cache: pip, cache-dependency-path: requirements/ci.lock}
       - run: python -m pip install -r requirements/ci.lock
       - run: python -m pip install --no-deps -e .
@@ -88,8 +88,8 @@ jobs:
     name: 4 - integration tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: {python-version: "3.12", cache: pip, cache-dependency-path: requirements/ci.lock}
       - run: python -m pip install -r requirements/ci.lock
       - run: python -m pip install --no-deps -e .
@@ -99,8 +99,8 @@ jobs:
     name: 5 - public API contract tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: {python-version: "3.12", cache: pip, cache-dependency-path: requirements/ci.lock}
       - run: python -m pip install -r requirements/ci.lock
       - run: python -m pip install --no-deps -e .
@@ -113,17 +113,17 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with: {fetch-depth: 0}
       - name: Dependency vulnerability scan
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scanners: vuln,misconfig
           severity: HIGH,CRITICAL
           exit-code: "1"
       - name: Secret scan
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -138,8 +138,8 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: {python-version: "3.12", cache: pip, cache-dependency-path: requirements/ci.lock}
       - run: python -m pip install -r requirements/ci.lock
       - id: version
@@ -164,10 +164,10 @@ jobs:
           upload-artifact: false
           upload-release-assets: false
       - name: Keyless artifact signing
-        uses: sigstore/gh-action-sigstore-python@v3.0.1
+        uses: sigstore/gh-action-sigstore-python@v3.5.0
         with:
           inputs: dist/packages/*.whl dist/packages/*.tar.gz dist/SHA256SUMS dist/*.spdx.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-${{ steps.version.outputs.version }}
           path: dist/
@@ -179,10 +179,10 @@ jobs:
     needs: build-wheel
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: {python-version: "3.12"}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: {name: "release-${{ needs.build-wheel.outputs.version }}", path: dist}
       - run: python -m venv clean-env
       - run: clean-env/bin/python -m pip install -r requirements/ci.lock
@@ -196,10 +196,10 @@ jobs:
     needs: [build-wheel, clean-install]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: {python-version: "3.12"}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: {name: "release-${{ needs.build-wheel.outputs.version }}", path: dist}
       - run: python -m pip install -r requirements/ci.lock
       - run: python -m pip install --no-deps -e .
@@ -212,16 +212,16 @@ jobs:
     if: ${{ inputs.product_tests_repository != '' || vars.PRODUCT_TESTS_REPOSITORY != '' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.product_tests_repository || vars.PRODUCT_TESTS_REPOSITORY }}
           ref: ${{ inputs.product_tests_ref || vars.PRODUCT_TESTS_CANDIDATE_REF || 'main' }}
           token: ${{ secrets.product_tests_token || secrets.PRODUCT_TESTS_TOKEN }}
           path: product-tests
           sparse-checkout: tests/framework_compatibility
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with: {python-version: "3.12"}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: {name: "release-${{ needs.build-wheel.outputs.version }}", path: dist}
       - run: python -m pip install -r product-tests/tests/framework_compatibility/requirements.lock
       - run: python -m pip install --no-deps dist/packages/*.whl
@@ -235,7 +235,7 @@ jobs:
     environment: testpypi
     permissions: {id-token: write}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: {name: "release-${{ needs.build-wheel.outputs.version }}", path: dist}
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
@@ -251,7 +251,7 @@ jobs:
     environment: pypi
     permissions: {id-token: write}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: {name: "release-${{ needs.build-wheel.outputs.version }}", path: dist}
       - uses: pypa/gh-action-pypi-publish@release/v1
         with: {packages-dir: dist/packages, attestations: true}
@@ -263,7 +263,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions: {contents: write}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with: {fetch-depth: 0}
       - name: Create or verify immutable release tag
         shell: bash
@@ -284,9 +284,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions: {contents: write}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with: {fetch-depth: 0}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: {name: "release-${{ needs.build-wheel.outputs.version }}", path: dist}
       - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
